@@ -1,48 +1,66 @@
+# =============================================================================
+# MySQL Backup to S3 — Docker Compose
+# Based on: https://github.com/databacker/mysql-backup
+#
+# Usage:
+#   docker compose up -d          # Start scheduled backups
+#   docker compose exec backup mysql-backup dump --once   # Manual one-time backup
+#   docker compose logs -f backup # View logs
+# =============================================================================
 services:
   backup:
-    # Use pre-built image from GHCR (includes aws-cli, gpg, healthcheck)
-    # Or use databack/mysql-backup:latest for the base image without extras
+    # Custom image with aws-cli, gpg, healthcheck (built from this repo's Dockerfile)
+    # Fallback: use databack/mysql-backup:latest directly (without extras)
     image: ghcr.io/phu-nam-hai-jsco/mysql-backup-s3:latest
     container_name: db_daily_backup
     restart: always
     env_file: .env
     environment:
-      # 1. Database connection (LAN)
+      # ─── Database connection ─────────────────────────────────────────────
       DB_SERVER: ${DB_HOST}
       DB_PORT: ${DB_PORT:-3306}
       DB_USER: ${DB_USER}
       DB_PASS: ${DB_PASSWORD}
-      DB_NAMES: ${DB_NAMES:-}
+      DB_DUMP_INCLUDE: ${DB_NAMES:-}
 
-      # 2. Schedule & Timezone
-      CRON_TIME: ${BACKUP_CRON:-0 2 * * *}
+      # ─── Schedule (cron expression) ─────────────────────────────────────
+      # Ref: https://github.com/databacker/mysql-backup/blob/main/docs/configuration.md
+      DB_DUMP_CRON: ${BACKUP_CRON:-0 2 * * *}
       TZ: ${TZ:-Asia/Ho_Chi_Minh}
 
-      # 3. S3-compatible storage (iDrive e2)
+      # ─── S3-compatible storage target ────────────────────────────────────
       DB_DUMP_TARGET: "s3://${S3_BUCKET_NAME}/${S3_PREFIX:-db-backups}"
       AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
       AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
       AWS_ENDPOINT_URL: ${S3_ENDPOINT_URL}
-      AWS_DEFAULT_REGION: ${S3_REGION:-us-east-1}
+      AWS_REGION: ${S3_REGION:-us-east-1}
 
-      # 4. Dump options
-      MYSQLDUMP_OPTS: ${MYSQLDUMP_OPTS:---single-transaction --routines --triggers --events}
-
-      # 5. Retention policy (auto-cleanup old backups)
-      CLEANUP_OLDER_THAN: ${BACKUP_RETENTION:-30d}
-
-      # 6. Compression
+      # ─── Dump options ────────────────────────────────────────────────────
       DB_DUMP_SAFECHARS: "true"
+      DB_DUMP_COMPRESSION: gzip
+
+      # ─── Retention policy (auto-prune old backups) ───────────────────────
+      DB_DUMP_RETENTION: ${BACKUP_RETENTION:-720h}
+
+      # ─── Debug (set to "true" for verbose logging) ───────────────────────
+      DB_DEBUG: ${DB_DEBUG:-false}
+
+    # The upstream image requires the "dump" command to start backup mode
+    command: ["dump"]
 
     volumes:
-      - backup-logs:/var/log
+      # Optional: mount pre/post backup scripts
+      # - ./scripts.d/pre-backup:/scripts.d/pre-backup:ro
+      # - ./scripts.d/post-backup:/scripts.d/post-backup:ro
+      - backup-data:/tmp/backups
+
     healthcheck:
-      test: ["CMD-SHELL", "test -f /tmp/.backup-healthy || exit 1"]
-      interval: 60s
+      test: ["CMD", "pgrep", "-f", "mysql-backup"]
+      interval: 5m
       timeout: 10s
-      start_period: 30s
+      start_period: 60s
       retries: 3
 
 volumes:
-  backup-logs:
+  backup-data:
     driver: local

@@ -1,11 +1,20 @@
 #!/usr/bin/env bash
 # =============================================================================
 # restore.sh — Restore MySQL backup from S3
+#
+# Can be used standalone (host) or inside the custom Docker image.
+# For container-native restore, prefer:
+#   docker run --rm --env-file .env \
+#     -e DB_RESTORE_TARGET="s3://bucket/path/file.sql.gz" \
+#     ghcr.io/phu-nam-hai-jsco/mysql-backup-s3:latest restore
+#
 # Usage:
 #   ./scripts/restore.sh                     # List available backups
 #   ./scripts/restore.sh <filename>          # Restore specific backup
 #   ./scripts/restore.sh --latest            # Restore most recent backup
 #   ./scripts/restore.sh --decrypt <file>    # Restore encrypted backup
+#
+# Requirements: mysql client, aws-cli, gunzip, gpg (optional)
 # =============================================================================
 set -euo pipefail
 
@@ -52,9 +61,20 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Examples:"
             echo "  $0 --list"
-            echo "  $0 mydb_2026-07-20_020000.sql.gz"
-            echo "  $0 --decrypt mydb_2026-07-20_020000.sql.gz.gpg"
+            echo "  $0 db_backup_2026-07-20T02-00-00Z.sql.gz"
+            echo "  $0 --decrypt db_backup_2026-07-20T02-00-00Z.sql.gz.gpg"
             echo "  $0 --latest"
+            echo ""
+            echo "Container-native restore (recommended):"
+            echo "  docker run --rm --env-file .env \\"
+            echo "    -e DB_SERVER=\${DB_HOST} -e DB_PORT=\${DB_PORT:-3306} \\"
+            echo "    -e DB_USER=\${DB_USER} -e DB_PASS=\${DB_PASSWORD} \\"
+            echo "    -e DB_RESTORE_TARGET=\"s3://bucket/path/file.sql.gz\" \\"
+            echo "    -e AWS_ACCESS_KEY_ID=\${S3_ACCESS_KEY} \\"
+            echo "    -e AWS_SECRET_ACCESS_KEY=\${S3_SECRET_KEY} \\"
+            echo "    -e AWS_ENDPOINT_URL=\${S3_ENDPOINT_URL} \\"
+            echo "    -e AWS_REGION=\${S3_REGION} \\"
+            echo "    databack/mysql-backup restore"
             exit 0
             ;;
         *)
@@ -121,6 +141,10 @@ fi
 # ─── Download ────────────────────────────────────────────────────────────────
 RESTORE_DIR="/tmp/mysql-restore-$$"
 mkdir -p "$RESTORE_DIR"
+
+# Cleanup on exit
+trap 'rm -rf "$RESTORE_DIR"' EXIT
+
 LOCAL_FILE="$RESTORE_DIR/$TARGET_FILE"
 
 echo ""
@@ -133,7 +157,6 @@ if [[ "$DECRYPT" == "true" ]] || [[ "$LOCAL_FILE" == *.gpg ]]; then
     echo "[2/3] Decrypting..."
     if [[ -z "${BACKUP_GPG_PASSPHRASE:-}" ]]; then
         echo "ERROR: Decryption requires BACKUP_GPG_PASSPHRASE in .env"
-        rm -rf "$RESTORE_DIR"
         exit 1
     fi
     gpg --batch --yes --decrypt \
@@ -158,12 +181,8 @@ elif [[ "$LOCAL_FILE" == *.sql ]]; then
         -u "$DB_USER" -p"$DB_PASSWORD" < "$LOCAL_FILE"
 else
     echo "ERROR: Unsupported file format: $LOCAL_FILE"
-    rm -rf "$RESTORE_DIR"
     exit 1
 fi
-
-# ─── Cleanup ─────────────────────────────────────────────────────────────────
-rm -rf "$RESTORE_DIR"
 
 echo ""
 echo "✅ Restore completed successfully!"
