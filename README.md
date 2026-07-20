@@ -246,6 +246,37 @@ Error: AccessDenied
 | DigitalOcean Spaces | `https://{region}.digitaloceanspaces.com` |
 | Cloudflare R2 | `https://{account-id}.r2.cloudflarestorage.com` |
 
+## CI/CD — GitHub Actions
+
+This repo includes a GitHub Actions workflow that automatically builds and publishes the Docker image to GitHub Container Registry (GHCR).
+
+### Triggers
+
+| Event | Condition | Action |
+|-------|-----------|--------|
+| Push to `main` | Changes in `Dockerfile`, `scripts/**` | Build + push `:latest` + `:sha-xxx` |
+| Git tag `v*` | e.g., `v1.0.0` | Build + push `:1.0.0`, `:1.0`, `:1` |
+| Pull Request | Changes in `Dockerfile`, `scripts/**` | Build only (no push) — validates the image builds |
+| Manual (`workflow_dispatch`) | Custom version input | Build + push custom tag |
+
+### Pull the image
+
+```bash
+docker pull ghcr.io/phu-nam-hai-jsco/mysql-backup-s3:latest
+```
+
+### Create a release
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+# → Automatically builds and pushes :1.0.0, :1.0, :1, :latest
+```
+
+### Multi-architecture support
+
+The image is built for both `linux/amd64` and `linux/arm64` (supports both x86 servers and ARM-based devices like Raspberry Pi / Apple Silicon).
+
 ## License
 
 See [LICENSE](LICENSE) file.
