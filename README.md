@@ -16,10 +16,10 @@ Automated daily MySQL/MariaDB backup to S3-compatible storage (iDrive e2, AWS S3
 ## Architecture
 
 ```
-┌──────────────┐         LAN          ┌──────────────┐
+┌──────────────┐         LAN            ┌──────────────┐
 │ Server Backup│ ───── port 3306 ────▶ │  MySQL/Maria │
-│  (Docker)    │                       │   Database   │
-└──────┬───────┘                       └──────────────┘
+│  (Docker)    │                        │   Database   │
+└──────┬───────┘                        └──────────────┘
        │
        │  S3 API (HTTPS)
        ▼
