@@ -1,0 +1,26 @@
+# Environment files (contain secrets)
+.env
+.env.local
+.env.production
+
+# Backup files
+*.sql
+*.sql.gz
+*.sql.gz.gpg
+/backups/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Temp
+/tmp/

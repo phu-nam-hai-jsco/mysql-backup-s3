@@ -1,0 +1,46 @@
+services:
+  backup:
+    image: databack/mysql-backup:latest
+    container_name: db_daily_backup
+    restart: always
+    env_file: .env
+    environment:
+      # 1. Database connection (LAN)
+      DB_SERVER: ${DB_HOST}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_USER: ${DB_USER}
+      DB_PASS: ${DB_PASSWORD}
+      DB_NAMES: ${DB_NAMES:-}
+
+      # 2. Schedule & Timezone
+      CRON_TIME: ${BACKUP_CRON:-0 2 * * *}
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+
+      # 3. S3-compatible storage (iDrive e2)
+      DB_DUMP_TARGET: "s3://${S3_BUCKET_NAME}/${S3_PREFIX:-db-backups}"
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
+      AWS_ENDPOINT_URL: ${S3_ENDPOINT_URL}
+      AWS_DEFAULT_REGION: ${S3_REGION:-us-east-1}
+
+      # 4. Dump options
+      MYSQLDUMP_OPTS: ${MYSQLDUMP_OPTS:---single-transaction --routines --triggers --events}
+
+      # 5. Retention policy (auto-cleanup old backups)
+      CLEANUP_OLDER_THAN: ${BACKUP_RETENTION:-30d}
+
+      # 6. Compression
+      DB_DUMP_SAFECHARS: "true"
+
+    volumes:
+      - backup-logs:/var/log
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/.backup-healthy || exit 1"]
+      interval: 60s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+
+volumes:
+  backup-logs:
+    driver: local
