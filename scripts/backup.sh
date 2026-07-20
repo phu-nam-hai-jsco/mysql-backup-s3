@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
 # =============================================================================
-# backup.sh — Manual backup trigger with optional encryption
+# backup.sh — Manual backup using AWS CLI (standalone, outside the container)
+#
+# This script is for MANUAL/ad-hoc backups from the host machine or inside
+# the custom Docker image. The main scheduled backup is handled by the
+# databack/mysql-backup entrypoint (via `command: dump` in docker-compose).
+#
 # Usage:
 #   ./scripts/backup.sh                  # Backup all databases
 #   ./scripts/backup.sh mydb             # Backup specific database
 #   ./scripts/backup.sh --encrypt mydb   # Backup with GPG encryption
+#
+# Requirements: mysql/mysqldump client, aws-cli, gzip, gpg (optional)
 # =============================================================================
 set -euo pipefail
 
@@ -39,6 +46,9 @@ while [[ $# -gt 0 ]]; do
             echo "  --help, -h       Show this help"
             echo ""
             echo "If no database_name is specified, uses DB_NAMES from .env (or all databases)."
+            echo ""
+            echo "NOTE: Scheduled backups are handled automatically by the container."
+            echo "      This script is for manual/ad-hoc backups only."
             exit 0
             ;;
         *)
@@ -49,12 +59,16 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ─── Configuration ───────────────────────────────────────────────────────────
-TIMESTAMP=$(date +%Y-%m-%d_%H%M%S)
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+TIMESTAMP_SAFE=$(echo "$TIMESTAMP" | tr ':' '-')
 BACKUP_DIR="/tmp/mysql-backup-$$"
 mkdir -p "$BACKUP_DIR"
 
+# Cleanup on exit
+trap 'rm -rf "$BACKUP_DIR"' EXIT
+
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  MySQL Backup → S3"
+echo "  Manual MySQL Backup → S3"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  Timestamp : $TIMESTAMP"
 echo "  DB Host   : ${DB_HOST}:${DB_PORT:-3306}"
@@ -64,17 +78,17 @@ echo "  Encrypt   : $ENCRYPT"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # ─── Dump database ───────────────────────────────────────────────────────────
-DUMP_OPTS="${MYSQLDUMP_OPTS:---single-transaction --routines --triggers --events}"
+DUMP_OPTS="--single-transaction --routines --triggers --events"
 
 if [[ -z "$DB_TARGET" ]]; then
-    DUMP_FILE="$BACKUP_DIR/all-databases_${TIMESTAMP}.sql"
+    DUMP_FILE="$BACKUP_DIR/db_backup_${TIMESTAMP_SAFE}.sql"
     echo "[1/4] Dumping ALL databases..."
     # shellcheck disable=SC2086
     mysqldump -h "$DB_HOST" -P "${DB_PORT:-3306}" \
         -u "$DB_USER" -p"$DB_PASSWORD" \
         $DUMP_OPTS --all-databases > "$DUMP_FILE"
 else
-    DUMP_FILE="$BACKUP_DIR/${DB_TARGET}_${TIMESTAMP}.sql"
+    DUMP_FILE="$BACKUP_DIR/${DB_TARGET}_${TIMESTAMP_SAFE}.sql"
     echo "[1/4] Dumping database: $DB_TARGET..."
     # shellcheck disable=SC2086
     mysqldump -h "$DB_HOST" -P "${DB_PORT:-3306}" \
@@ -86,7 +100,7 @@ DUMP_SIZE=$(du -h "$DUMP_FILE" | cut -f1)
 echo "     Dump size: $DUMP_SIZE"
 
 # ─── Compress ────────────────────────────────────────────────────────────────
-echo "[2/4] Compressing..."
+echo "[2/4] Compressing with gzip..."
 gzip "$DUMP_FILE"
 DUMP_FILE="${DUMP_FILE}.gz"
 COMPRESSED_SIZE=$(du -h "$DUMP_FILE" | cut -f1)
@@ -96,10 +110,9 @@ echo "     Compressed: $COMPRESSED_SIZE"
 if [[ "$ENCRYPT" == "true" ]]; then
     if [[ -z "${BACKUP_GPG_PASSPHRASE:-}" ]]; then
         echo "ERROR: --encrypt requires BACKUP_GPG_PASSPHRASE in .env"
-        rm -rf "$BACKUP_DIR"
         exit 1
     fi
-    echo "[3/4] Encrypting with GPG..."
+    echo "[3/4] Encrypting with GPG (AES-256)..."
     gpg --batch --yes --symmetric --cipher-algo AES256 \
         --passphrase "$BACKUP_GPG_PASSPHRASE" \
         "$DUMP_FILE"
@@ -122,11 +135,9 @@ aws s3 cp "$DUMP_FILE" "$S3_PATH" \
     --region "${S3_REGION:-us-east-1}" \
     --quiet
 
+FINAL_SIZE=$(du -h "$DUMP_FILE" | cut -f1)
+
 echo ""
 echo "✅ Backup completed successfully!"
 echo "   File: $S3_PATH"
-echo "   Size: $(du -h "$DUMP_FILE" | cut -f1)"
-
-# ─── Cleanup ─────────────────────────────────────────────────────────────────
-rm -rf "$BACKUP_DIR"
-echo "   Local temp files cleaned up."
+echo "   Size: $FINAL_SIZE"
