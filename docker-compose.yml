@@ -1,6 +1,8 @@
 services:
   backup:
-    image: databack/mysql-backup:latest
+    # Use pre-built image from GHCR (includes aws-cli, gpg, healthcheck)
+    # Or use databack/mysql-backup:latest for the base image without extras
+    image: ghcr.io/phu-nam-hai-jsco/mysql-backup-s3:latest
     container_name: db_daily_backup
     restart: always
     env_file: .env
