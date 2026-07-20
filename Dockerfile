@@ -10,7 +10,7 @@
 # =============================================================================
 FROM databack/mysql-backup:latest
 
-# The base image runs as non-root user (appuser). Switch to root to install packages.
+# Switch to root to install packages (base image uses non-root user)
 USER root
 
 # Install additional tools for manual operations & healthcheck
@@ -29,9 +29,9 @@ RUN chmod +x /usr/local/bin/healthcheck.sh \
     /usr/local/bin/manual-backup.sh \
     /usr/local/bin/manual-restore.sh
 
-# Switch back to non-root user for runtime security
+# Switch back to non-root user (appuser from base image)
 USER appuser
 
-# Healthcheck: verify the backup process is alive via the built-in entrypoint
+# Healthcheck: verify the backup process is alive
 HEALTHCHECK --interval=5m --timeout=10s --start-period=60s --retries=3 \
     CMD pgrep -f "mysql-backup" > /dev/null || exit 1

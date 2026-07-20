@@ -36,7 +36,7 @@ if [[ -z "${S3_BUCKET_NAME:-}" ]] || [[ -z "${S3_ENDPOINT_URL:-}" ]]; then
 fi
 
 # ─── Configuration ───────────────────────────────────────────────────────────
-MAX_AGE_HOURS="${1:-25}"  # Default: 25 hours (allows 1h buffer for daily backups)
+MAX_AGE_HOURS="${1:-25}"
 S3_BASE="s3://${S3_BUCKET_NAME}/${S3_PREFIX:-db-backups}"
 
 # ─── Check latest backup ────────────────────────────────────────────────────
@@ -112,5 +112,5 @@ if [[ "$AGE_HOURS" -gt "$MAX_AGE_HOURS" ]]; then
 fi
 
 echo ""
-echo "✅ HEALTHY — Backup is ${AGE_HOURS}h old (within ${MAX_AGE_HOURS}h threshold)"
+echo "HEALTHY — Backup is ${AGE_HOURS}h old (within ${MAX_AGE_HOURS}h threshold)"
 exit 0

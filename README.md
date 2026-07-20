@@ -37,16 +37,12 @@ Automated daily MySQL/MariaDB backup to S3-compatible storage using Docker, buil
 
 ### 1. Prepare MySQL backup user
 
-On the **Database Server**, create a dedicated user with minimal permissions:
-
 ```sql
 CREATE USER 'backup_user'@'192.168.1.%' IDENTIFIED BY 'strong_password_here';
 GRANT SELECT, LOCK TABLES, SHOW VIEW, EVENT, TRIGGER, RELOAD, PROCESS
   ON *.* TO 'backup_user'@'192.168.1.%';
 FLUSH PRIVILEGES;
 ```
-
-> Adjust `'192.168.1.%'` to match your backup server's subnet.
 
 ### 2. Verify MySQL is accessible from LAN
 
@@ -60,6 +56,9 @@ If this fails, check:
 
 ### 3. Configure S3 storage
 
+1. Create a bucket on your S3-compatible provider
+2. Create access keys with read/write permissions
+
 **iDrive e2 example:**
 1. Login to [iDrive e2 Dashboard](https://www.idrive.com/e2/)
 2. Create a new **Bucket** (e.g., `my-db-backups`)
@@ -72,10 +71,10 @@ If this fails, check:
 git clone https://github.com/phu-nam-hai-jsco/mysql-backup-s3.git
 cd mysql-backup-s3
 
-# Configure
 cp .env.example .env
 chmod 600 .env
 nano .env  # Fill in your values
+
 
 # Start scheduled backups
 docker compose up -d
@@ -94,7 +93,7 @@ docker compose logs -f backup
 docker compose exec backup /mysql-backup dump --once
 
 # Verify on your S3 dashboard that a .sql.gz file appeared
-```
+
 
 ## Configuration
 
@@ -158,17 +157,10 @@ docker run --rm \
 ### Option B: Manual restore script
 
 ```bash
-# List available backups
-./scripts/restore.sh --list
-
-# Restore latest backup
-./scripts/restore.sh --latest
-
-# Restore specific backup
-./scripts/restore.sh db_backup_2026-07-20T02-00-00Z.sql.gz
-
-# Restore encrypted backup
-./scripts/restore.sh --decrypt db_backup_2026-07-20T02-00-00Z.sql.gz.gpg
+./scripts/restore.sh --list           # List available backups
+./scripts/restore.sh --latest         # Restore most recent
+./scripts/restore.sh <filename>       # Restore specific backup
+./scripts/restore.sh --decrypt <file> # Restore encrypted backup
 ```
 
 ### Option C: Download and restore manually
@@ -180,7 +172,6 @@ aws s3 cp \
   s3://${S3_BUCKET_NAME}/${S3_PREFIX:-db-backups}/db_backup_2026-07-20T02-00-00Z.gz \
   ./backup.sql.gz
 
-# Decompress and import
 gunzip backup.sql.gz
 mysql -h ${DB_HOST} -u ${DB_USER} -p < backup.sql
 ```
@@ -199,9 +190,7 @@ docker compose exec backup /mysql-backup dump --once
 ./scripts/backup.sh --encrypt mydb   # With GPG encryption
 ```
 
-## Monitoring
-
-### Check backup status
+## Manual Backup
 
 ```bash
 # View recent logs
@@ -288,29 +277,30 @@ Automatically builds and publishes the Docker image to GHCR on push.
 ```bash
 # Pull the image
 docker pull ghcr.io/phu-nam-hai-jsco/mysql-backup-s3:latest
-
-# Create a release
-git tag v1.0.0
-git push origin v1.0.0
 ```
 
 ## Troubleshooting
 
+### Container exits immediately
+
+Ensure `command: ["dump"]` is set in docker-compose.yml. The upstream image requires an explicit command.
+
+### Docker build fails with Permission Denied
+
+The base image runs as non-root `appuser`. The Dockerfile uses `USER root` for package install, then `USER appuser` for runtime.
+
 ### Cannot connect to MySQL
 
-```
-Error: Can't connect to MySQL server on '192.168.1.50' (113)
-```
-
-1. Check MySQL `bind-address` in `/etc/mysql/mysql.conf.d/mysqld.cnf`
-2. Verify firewall: `sudo ufw allow from 192.168.1.0/24 to any port 3306`
-3. Verify user grant: `SHOW GRANTS FOR 'backup_user'@'192.168.1.%';`
+1. Check MySQL `bind-address` (should be `0.0.0.0`)
+2. Verify firewall allows port 3306
+3. Check user grants
 
 ### S3 upload fails with AccessDenied
 
-1. Verify `S3_ACCESS_KEY` and `S3_SECRET_KEY` are correct
-2. Check bucket policy allows `PutObject` and `GetObject`
-3. Verify `S3_ENDPOINT_URL` format (should include `https://`)
+1. Verify credentials in `.env`
+2. Check bucket policy allows `PutObject`/`GetObject`
+3. Verify endpoint URL format
+
 
 ### Docker build fails with Permission Denied
 
