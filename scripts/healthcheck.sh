@@ -23,7 +23,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${SCRIPT_DIR}/../.env"
 
-# Support running inside container (env vars already set) or from host (.env)
+# Support running inside container (env vars already set) or from host (.env file)
 if [[ -f "$ENV_FILE" ]]; then
     # shellcheck disable=SC1090
     source "$ENV_FILE"
@@ -51,7 +51,7 @@ if [[ -z "$LATEST_LINE" ]]; then
     if [[ -n "${WEBHOOK_URL:-}" ]]; then
         curl -sf -X POST "$WEBHOOK_URL" \
             -H 'Content-Type: application/json' \
-            -d "{\"text\":\"DB Backup CRITICAL: ${MSG}\"}" \
+            -d "{\"text\":\"🚨 DB Backup CRITICAL: ${MSG}\"}" \
             >/dev/null 2>&1 || true
     fi
     exit 1
@@ -92,7 +92,7 @@ if [[ "$LATEST_SIZE" -eq 0 ]]; then
     if [[ -n "${WEBHOOK_URL:-}" ]]; then
         curl -sf -X POST "$WEBHOOK_URL" \
             -H 'Content-Type: application/json' \
-            -d "{\"text\":\"DB Backup CRITICAL: ${MSG}\"}" \
+            -d "{\"text\":\"🚨 DB Backup CRITICAL: ${MSG}\"}" \
             >/dev/null 2>&1 || true
     fi
     exit 1
@@ -105,7 +105,7 @@ if [[ "$AGE_HOURS" -gt "$MAX_AGE_HOURS" ]]; then
     if [[ -n "${WEBHOOK_URL:-}" ]]; then
         curl -sf -X POST "$WEBHOOK_URL" \
             -H 'Content-Type: application/json' \
-            -d "{\"text\":\"DB Backup CRITICAL: ${MSG}\"}" \
+            -d "{\"text\":\"🚨 DB Backup CRITICAL: ${MSG}\"}" \
             >/dev/null 2>&1 || true
     fi
     exit 1

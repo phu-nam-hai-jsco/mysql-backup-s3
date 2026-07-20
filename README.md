@@ -50,10 +50,20 @@ FLUSH PRIVILEGES;
 mysql -h 192.168.1.50 -u backup_user -p -e "SELECT 1;"
 ```
 
+If this fails, check:
+- MySQL `bind-address` is NOT `127.0.0.1` (should be `0.0.0.0` or the LAN IP)
+- Firewall allows port 3306 from backup server IP
+
 ### 3. Configure S3 storage
 
 1. Create a bucket on your S3-compatible provider
 2. Create access keys with read/write permissions
+
+**iDrive e2 example:**
+1. Login to [iDrive e2 Dashboard](https://www.idrive.com/e2/)
+2. Create a new **Bucket** (e.g., `my-db-backups`)
+3. Go to **Access Keys** → **Create Access Key**
+4. Note down: `Access Key`, `Secret Key`, `Endpoint URL`, `Region`
 
 ### 4. Deploy
 
@@ -65,6 +75,8 @@ cp .env.example .env
 chmod 600 .env
 nano .env  # Fill in your values
 
+
+# Start scheduled backups
 docker compose up -d
 ```
 
@@ -77,9 +89,11 @@ docker compose ps
 # View logs
 docker compose logs -f backup
 
-# Trigger a one-time manual backup
+# Trigger a one-time manual backup via the container
 docker compose exec backup /mysql-backup dump --once
-```
+
+# Verify on your S3 dashboard that a .sql.gz file appeared
+
 
 ## Configuration
 
@@ -100,10 +114,12 @@ All configuration is done via environment variables in `.env`:
 | `S3_REGION` | No | `us-east-1` | S3 region |
 | `BACKUP_CRON` | No | `0 2 * * *` | Cron schedule (default: 2 AM daily) |
 | `TZ` | No | `Asia/Ho_Chi_Minh` | Timezone |
-| `BACKUP_RETENTION` | No | `720h` | Auto-prune backups older than this |
+| `BACKUP_RETENTION` | No | `720h` | Auto-prune backups older than this (in hours) |
 | `DB_DEBUG` | No | `false` | Enable verbose logging |
 
-### Upstream environment variable mapping
+### Upstream environment variables
+
+The docker-compose maps your `.env` values to the upstream `databack/mysql-backup` variables:
 
 | Your `.env` | Maps to (upstream) | Purpose |
 |-------------|-------------------|---------|
@@ -117,13 +133,14 @@ All configuration is done via environment variables in `.env`:
 | `S3_REGION` | `AWS_REGION` | S3 region |
 | `BACKUP_RETENTION` | `DB_DUMP_RETENTION` | Retention policy |
 
-Full reference: [databacker/mysql-backup configuration docs](https://github.com/databacker/mysql-backup/blob/main/docs/configuration.md)
+Full configuration reference: [databacker/mysql-backup configuration docs](https://github.com/databacker/mysql-backup/blob/main/docs/configuration.md)
 
 ## Restore
 
 ### Option A: Container-native restore (recommended)
 
 ```bash
+# Restore from S3 directly using the upstream restore command
 docker run --rm \
   -e DB_SERVER=${DB_HOST} \
   -e DB_PORT=${DB_PORT:-3306} \
@@ -149,7 +166,9 @@ docker run --rm \
 ### Option C: Download and restore manually
 
 ```bash
-aws s3 cp --endpoint-url ${S3_ENDPOINT_URL} \
+# Download from S3
+aws s3 cp \
+  --endpoint-url ${S3_ENDPOINT_URL} \
   s3://${S3_BUCKET_NAME}/${S3_PREFIX:-db-backups}/db_backup_2026-07-20T02-00-00Z.gz \
   ./backup.sql.gz
 
@@ -159,8 +178,10 @@ mysql -h ${DB_HOST} -u ${DB_USER} -p < backup.sql
 
 ## Manual Backup
 
+The scheduled backup runs automatically. For ad-hoc backups:
+
 ```bash
-# Via the container (recommended)
+# Via the container (recommended — uses upstream tool)
 docker compose exec backup /mysql-backup dump --once
 
 # Via the manual script (requires mysqldump + aws-cli on host)
@@ -169,30 +190,56 @@ docker compose exec backup /mysql-backup dump --once
 ./scripts/backup.sh --encrypt mydb   # With GPG encryption
 ```
 
-## Monitoring
+## Manual Backup
 
 ```bash
-# View logs
+# View recent logs
 docker compose logs --tail 50 backup
 
 # Check container health
 docker inspect --format='{{.State.Health.Status}}' db_daily_backup
+```
 
-# Healthcheck script (verifies latest backup on S3 is recent)
-./scripts/healthcheck.sh        # Default: 25h threshold
-./scripts/healthcheck.sh 48     # Custom threshold
+### Healthcheck script
+
+Verify the latest backup on S3 is recent and valid:
+
+```bash
+# Check backup is less than 25 hours old (default)
+./scripts/healthcheck.sh
+
+# Custom threshold (48 hours)
+./scripts/healthcheck.sh 48
+
+# Add to host crontab (check every 6 hours)
+0 */6 * * * /path/to/mysql-backup-s3/scripts/healthcheck.sh
+```
+
+### Webhook notifications
+
+Set `WEBHOOK_URL` in `.env` to receive alerts when healthcheck fails:
+
+```env
+WEBHOOK_URL=https://hooks.slack.com/services/xxx/yyy/zzz
 ```
 
 ## Pre/Post Backup Scripts
 
+The upstream image supports custom scripts that run before and after each backup:
+
 ```yaml
-# In docker-compose.yml, uncomment:
+# In docker-compose.yml, uncomment and mount your scripts:
 volumes:
   - ./scripts.d/pre-backup:/scripts.d/pre-backup:ro
   - ./scripts.d/post-backup:/scripts.d/post-backup:ro
 ```
 
-See [upstream docs](https://github.com/databacker/mysql-backup/blob/main/docs/backup.md).
+Scripts receive these environment variables:
+- `DUMPFILE` — full path to the dump file
+- `NOW` — timestamp of the backup
+- `DUMPDIR` — path to the dump directory
+
+See [upstream docs on pre/post processing](https://github.com/databacker/mysql-backup/blob/main/docs/backup.md).
 
 ## Supported S3 Providers
 
@@ -207,22 +254,28 @@ See [upstream docs](https://github.com/databacker/mysql-backup/blob/main/docs/ba
 
 ## NAS Deployment
 
+Full scripts for popular NAS platforms (Synology, QNAP, TrueNAS, Unraid):
+
 ```bash
-chmod +x nas/setup.sh && ./nas/setup.sh
+chmod +x nas/setup.sh
+./nas/setup.sh
 ```
 
 See [nas/README.md](nas/README.md) for platform-specific guides.
 
 ## CI/CD — GitHub Actions
 
+Automatically builds and publishes the Docker image to GHCR on push.
+
 | Event | Action |
 |-------|--------|
-| Push to `main` | Build + push `:latest` + `:sha-xxx` |
+| Push to `main` (Dockerfile/scripts changes) | Build + push `:latest` + `:sha-xxx` |
 | Git tag `v*` | Build + push `:1.0.0`, `:1.0`, `:1` |
-| Pull Request | Build only (validates image) |
-| Manual | Build + push custom tag |
+| Pull Request | Build only (validates image builds) |
+| Manual (`workflow_dispatch`) | Build + push custom tag |
 
 ```bash
+# Pull the image
 docker pull ghcr.io/phu-nam-hai-jsco/mysql-backup-s3:latest
 ```
 
@@ -247,6 +300,24 @@ The base image runs as non-root `appuser`. The Dockerfile uses `USER root` for p
 1. Verify credentials in `.env`
 2. Check bucket policy allows `PutObject`/`GetObject`
 3. Verify endpoint URL format
+
+
+### Docker build fails with Permission Denied
+
+The upstream `databack/mysql-backup` image runs as non-root user `appuser`. Our Dockerfile switches to `USER root` for package installation, then back to `USER appuser`. If you see this error, ensure your Dockerfile has the correct `USER` directives.
+
+### Container exits immediately
+
+Ensure `command: ["dump"]` is set in docker-compose.yml. The upstream image requires a command (`dump` or `restore`) to start.
+
+## Security Best Practices
+
+1. **File permissions**: `chmod 600 .env` — prevent other users from reading credentials
+2. **Dedicated user**: MySQL user with minimal backup-only permissions
+3. **Network**: Restrict MySQL access to backup server IP only
+4. **Non-root container**: Image runs as `appuser` (UID 1005) at runtime
+5. **Bucket policy**: Restrict S3 bucket access to backup credentials only
+6. **Encryption**: Use `--encrypt` flag with manual backup script for client-side GPG encryption
 
 ## License
 
