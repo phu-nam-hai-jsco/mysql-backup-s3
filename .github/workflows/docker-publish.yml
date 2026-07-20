@@ -6,6 +6,7 @@ on:
     paths:
       - 'Dockerfile'
       - 'scripts/**'
+      - 'docker-compose.yml'
       - '.github/workflows/docker-publish.yml'
     tags:
       - 'v*'
@@ -14,6 +15,7 @@ on:
     paths:
       - 'Dockerfile'
       - 'scripts/**'
+      - 'docker-compose.yml'
       - '.github/workflows/docker-publish.yml'
   workflow_dispatch:
     inputs:

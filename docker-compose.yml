@@ -9,9 +9,13 @@
 # =============================================================================
 services:
   backup:
-    # Custom image with aws-cli, gpg, healthcheck (built from this repo's Dockerfile)
-    # Fallback: use databack/mysql-backup:latest directly (without extras)
-    image: ghcr.io/phu-nam-hai-jsco/mysql-backup-s3:latest
+    # Build from local Dockerfile (includes aws-cli, gpg, healthcheck)
+    # Once GHCR image is published, you can switch to:
+    #   image: ghcr.io/phu-nam-hai-jsco/mysql-backup-s3:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: phu-nam-hai-jsco/mysql-backup-s3:latest
     container_name: db_daily_backup
     restart: always
     env_file: .env

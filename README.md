@@ -75,8 +75,8 @@ cp .env.example .env
 chmod 600 .env
 nano .env  # Fill in your values
 
-# Start scheduled backups
-docker compose up -d
+# Build & start scheduled backups
+docker compose up -d --build
 ```
 
 ### 5. Verify
@@ -274,8 +274,11 @@ Automatically builds and publishes the Docker image to GHCR on push.
 | Manual (`workflow_dispatch`) | Build + push custom tag |
 
 ```bash
-# Pull the image
+# Pull the pre-built image (after CI publishes it)
 docker pull ghcr.io/phu-nam-hai-jsco/mysql-backup-s3:latest
+
+# Or build locally (default in docker-compose.yml)
+docker compose build
 ```
 
 ## Troubleshooting
