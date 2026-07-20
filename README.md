@@ -16,10 +16,10 @@ Automated daily MySQL/MariaDB backup to S3-compatible storage (iDrive e2, AWS S3
 ## Architecture
 
 ```
-┌──────────────┐         LAN          ┌──────────────┐
+┌──────────────┐         LAN            ┌──────────────┐
 │ Server Backup│ ───── port 3306 ────▶ │  MySQL/Maria │
-│  (Docker)    │                       │   Database   │
-└──────┬───────┘                       └──────────────┘
+│  (Docker)    │                        │   Database   │
+└──────┬───────┘                        └──────────────┘
        │
        │  S3 API (HTTPS)
        ▼
@@ -245,6 +245,28 @@ Error: AccessDenied
 | Backblaze B2 | `https://s3.{region}.backblazeb2.com` |
 | DigitalOcean Spaces | `https://{region}.digitaloceanspaces.com` |
 | Cloudflare R2 | `https://{account-id}.r2.cloudflarestorage.com` |
+
+## NAS Deployment
+
+Full scripts for popular NAS platforms (Synology, QNAP, TrueNAS, Unraid):
+
+```bash
+# Auto-detect NAS and install
+chmod +x nas/setup.sh
+./nas/setup.sh
+```
+
+After install, manage with:
+```bash
+./manage.sh start       # Start container
+./manage.sh backup      # Trigger backup now
+./manage.sh status      # Check status
+./manage.sh test        # Test DB + S3 connection
+./manage.sh update      # Pull latest image
+./manage.sh health      # Verify latest backup freshness
+```
+
+See [nas/README.md](nas/README.md) for platform-specific guides (Synology Task Scheduler, QNAP autostart, TrueNAS cron, Unraid User Scripts).
 
 ## CI/CD — GitHub Actions
 
