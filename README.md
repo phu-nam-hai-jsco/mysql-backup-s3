@@ -75,7 +75,6 @@ cp .env.example .env
 chmod 600 .env
 nano .env  # Fill in your values
 
-
 # Start scheduled backups
 docker compose up -d
 ```
@@ -93,7 +92,7 @@ docker compose logs -f backup
 docker compose exec backup /mysql-backup dump --once
 
 # Verify on your S3 dashboard that a .sql.gz file appeared
-
+```
 
 ## Configuration
 
@@ -190,7 +189,7 @@ docker compose exec backup /mysql-backup dump --once
 ./scripts/backup.sh --encrypt mydb   # With GPG encryption
 ```
 
-## Manual Backup
+## Monitoring
 
 ```bash
 # View recent logs
@@ -283,11 +282,11 @@ docker pull ghcr.io/phu-nam-hai-jsco/mysql-backup-s3:latest
 
 ### Container exits immediately
 
-Ensure `command: ["dump"]` is set in docker-compose.yml. The upstream image requires an explicit command.
+Ensure `command: ["dump"]` is set in docker-compose.yml. The upstream image requires an explicit command (`dump` or `restore`) to start.
 
 ### Docker build fails with Permission Denied
 
-The base image runs as non-root `appuser`. The Dockerfile uses `USER root` for package install, then `USER appuser` for runtime.
+The upstream `databack/mysql-backup` image runs as non-root user `appuser`. Our Dockerfile switches to `USER root` for package installation, then back to `USER appuser`. If you see this error, ensure your Dockerfile has the correct `USER` directives.
 
 ### Cannot connect to MySQL
 
@@ -300,15 +299,6 @@ The base image runs as non-root `appuser`. The Dockerfile uses `USER root` for p
 1. Verify credentials in `.env`
 2. Check bucket policy allows `PutObject`/`GetObject`
 3. Verify endpoint URL format
-
-
-### Docker build fails with Permission Denied
-
-The upstream `databack/mysql-backup` image runs as non-root user `appuser`. Our Dockerfile switches to `USER root` for package installation, then back to `USER appuser`. If you see this error, ensure your Dockerfile has the correct `USER` directives.
-
-### Container exits immediately
-
-Ensure `command: ["dump"]` is set in docker-compose.yml. The upstream image requires a command (`dump` or `restore`) to start.
 
 ## Security Best Practices
 
